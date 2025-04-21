@@ -1,19 +1,11 @@
 import os
 import pandas as pd
 from sqlalchemy import create_engine
-import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer
-import os
-import pandas as pd
-from sqlalchemy import create_engine
-import pickle
 from catboost import CatBoostClassifier
 from sklearn.model_selection import train_test_split
-
+from tqdm import tqdm
 from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score
-
-from sklearn.model_selection import TimeSeriesSplit
 
 
 def get_postgres_engine():
@@ -37,28 +29,40 @@ def get_path_in_project(path: str) -> str:
 
 
 def get_user_data(engine):
-    querry = """
+    query = """
         SELECT * FROM public.user_data;
         """
-    
-    user_data_df = pd.read_sql(querry, con=engine)
+    conn = engine.connect().execution_options(stream_results=True)
+    user_data_df = pd.read_sql(query, con=conn)
+    conn.close()
     return user_data_df
+
 
 def get_post_text_df(engine):
-    querry = """
+    query = """
         SELECT * FROM public.post_text_df;
         """
-    
-    user_data = pd.read_sql(querry, con=engine)
-    return user_data
+    conn = engine.connect().execution_options(stream_results=True)
+    post_text_df = pd.read_sql(query, con=engine)
+    conn.close()
+    return post_text_df
 
 def get_feed_data(engine):
-    querry = """
-        SELECT * FROM public.feed_data LIMIT 5000000;
-        """
+    query = "SELECT * FROM public.feed_data LIMIT 1000000;"
+    CHUNKSIZE = 200000
+
+    conn = engine.connect().execution_options(stream_results=True)
+    chunks = []
     
-    user_data_df = pd.read_sql(querry, con=engine)
-    return user_data_df
+    # Предполагаем максимум чанков
+    estimated_chunks = 1000000 // CHUNKSIZE + 1
+
+    for chunk_dataframe in tqdm(pd.read_sql(query, conn, chunksize=CHUNKSIZE), total=estimated_chunks):
+        chunks.append(chunk_dataframe)
+    
+    conn.close()
+    return pd.concat(chunks, ignore_index=True)
+
 
 
 
@@ -103,7 +107,6 @@ def process_timestamp(data: pd.DataFrame):
 
 def clean_final_data(data: pd.DataFrame):
    data = data.drop_duplicates(subset=["user_id", "post_id"], keep="first")
-   data = data.drop(["user_id", "post_id"], axis=1)
    data = data.drop(["action"], axis=1)
    data = data.drop(["exp_group"], axis=1)
    return data
@@ -120,6 +123,9 @@ def prepare_for_model(data: pd.DataFrame):
     print(X.columns)
 
 
+def save_data_to_sql(engine, data: pd.DataFrame, name):
+
+    data.to_sql(name, con=engine, if_exists="replace", index = False)
 
 def main():
 
@@ -132,12 +138,55 @@ def main():
 
     feed_data = process_timestamp(feed_data)
 
+    # save_data_to_sql(engine, user_data, 'fedorrybalov_lesson_22_user_data')
+    # print("сохранили в базу user_data")
+
+    # save_data_to_sql(engine, post_text_df, 'fedorrybalov_lesson_22_post_data')
+    # print("сохранили в базу post_data")
+
+    # save_data_to_sql(engine, feed_data, 'fedorrybalov_lesson_22_feed_data')
+    # print("сохранили в базу feed_data")
+
 
     full_data = merge_data(feed_data, user_data, post_text_df)
 
     full_data = clean_final_data(full_data)
 
+    
+
+    # save_data_to_sql(engine, full_data, 'fedorrybalov_lesson_22_features')
+    # print("сохранили в базу все")
+
     print(full_data.head())
+
+
+    X = full_data.drop(["target", "user_id", "post_id"], axis=1)
+    y = full_data["target"]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    categorial_cols = ["hour_of_day", "day_of_week", "city", "country", "os", "source", "topic"]
+    cat_features = [X_train.columns.get_loc(col) for col in categorial_cols]
+    print(X.columns)
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    model = CatBoostClassifier(iterations = 1000,
+                            depth = 6,
+                            learning_rate= 0.1,
+                            custom_metric='AUC',
+                            eval_metric='AUC',
+                            verbose = 100)
+
+    model.fit(X_train, y_train, cat_features=cat_features)
+
+    print("Accuracy: ", accuracy_score(y_test, model.predict(X_test)))
+    print("Precision: ", precision_score(y_test, model.predict(X_test), average='weighted'))
+    print("Recall:", recall_score(y_test, model.predict(X_test), average='weighted'))
+    print("ROC_AUC:", roc_auc_score(y_test, model.predict_proba(X_test)[:, 1], ))
+
+    model.save_model('catboost_model',
+                           format="cbm")
 
 
 if __name__ == "__main__":
