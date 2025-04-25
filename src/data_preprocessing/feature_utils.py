@@ -16,7 +16,7 @@ def process_text_data(df):
     tfidf = vectorizer.fit_transform(df["text"])
     tfidf_df = pd.DataFrame(tfidf.toarray(), columns=vectorizer.get_feature_names_out())
 
-    return pd.concat([df.drop(columns="text"), tfidf_df], axis=1)
+    return pd.concat([df, tfidf_df], axis=1)
 
 def process_timestamp(df):
     df['timestamp'] = pd.to_datetime(df['timestamp'])
