@@ -1,6 +1,6 @@
-from database.database import Base, SessionLocal, engine
-from table_user import User
-from table_post import Post
+from src.database.database import Base, SessionLocal, engine
+from src.database.tables.table_user import User
+from src.database.tables.table_post import Post
 from sqlalchemy.orm import relationship
 from sqlalchemy import TIMESTAMP, Column, Float, ForeignKey, Integer, String, func, desc
 

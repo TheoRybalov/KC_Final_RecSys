@@ -1,4 +1,4 @@
-from database.database import Base, SessionLocal, engine
+from src.database.database import Base, SessionLocal, engine
 from sqlalchemy import TIMESTAMP, Column, Float, ForeignKey, Integer, String, func, desc
 
 class User(Base):
