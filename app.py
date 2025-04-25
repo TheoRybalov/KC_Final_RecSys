@@ -10,14 +10,18 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from typing import List, Optional
-import datetime
+from datetime import datetime
 import numpy as np
-
+import requests
 from src.database.database import SessionLocal
 from src.database.tables.table_user import User
 from src.database.tables.table_post import Post
 from src.database.tables.table_feed import Feed
-from src.database.schema import UserGet, PostGet, FeedGet
+from src.database.schema import UserGet
+
+# , PostGet, FeedGet
+
+from schema import PostGet
 
 from fastapi import FastAPI, Depends, HTTPException
 from loguru import logger
@@ -38,48 +42,48 @@ def user_info(id, int, db: Session = Depends(get_db)):
         return result
     
 
-# @app.get("/post/{id}", response_model = PostGet)
-# def post_into(id: int, db: Session = Depends(get_db)):
-#     result =  db.query(Post).filter(Post.id == id).first()
-#     if not result:
-#         raise HTTPException(404, "user not found")
-#     else:
-#         return result
+@app.get("/post/{id}", response_model = PostGet)
+def post_into(id: int, db: Session = Depends(get_db)):
+    result =  db.query(Post).filter(Post.id == id).first()
+    if not result:
+        raise HTTPException(404, "user not found")
+    else:
+        return result
 
-# @app.get("/user/{id}/feed", response_model = List[FeedGet])
-# def user_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
-#     result =  (
-#         db.query(Feed)
-#         .filter(Feed.user_id == id)
-#         .order_by(Feed.time.desc())
-#         .limit(limit)
-#         .all()
-#     )
-#     return result
+@app.get("/user/{id}/feed", response_model = List[FeedGet])
+def user_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
+    result =  (
+        db.query(Feed)
+        .filter(Feed.user_id == id)
+        .order_by(Feed.time.desc())
+        .limit(limit)
+        .all()
+    )
+    return result
 
-# @app.get("/post/{id}/feed", response_model = List[FeedGet])
-# def post_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
-#     result =  (
-#         db.query(Feed)
-#         .filter(Feed.post_id == id)
-#         .order_by(Feed.time.desc())
-#         .limit(limit)
-#         .all()
-#     )
-#     return result
+@app.get("/post/{id}/feed", response_model = List[FeedGet])
+def post_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
+    result =  (
+        db.query(Feed)
+        .filter(Feed.post_id == id)
+        .order_by(Feed.time.desc())
+        .limit(limit)
+        .all()
+    )
+    return result
 
-# @app.get("/post/recommendations/", response_model = List[PostGet])
-# def get_recommended_feed(id: Optional[int] = None, limit: int = 10,  db: Session = Depends(get_db)):
-#     result =  (
-#         db.query(Post)
-#         .select_from(Feed)
-#         .filter(Feed.action == "like")
-#         .join(Post, Post.id == Feed.post_id)
-#         .group_by(Post.id)
-#         .order_by(desc(func.count(Feed.post_id)))
-#         .limit(limit)
-#         .all()
-#     )
+@app.get("/post/recommendations/", response_model = List[PostGet])
+def get_recommended_feed(id: Optional[int] = None, limit: int = 10,  db: Session = Depends(get_db)):
+    result =  (
+        db.query(Post)
+        .select_from(Feed)
+        .filter(Feed.action == "like")
+        .join(Post, Post.id == Feed.post_id)
+        .group_by(Post.id)
+        .order_by(desc(func.count(Feed.post_id)))
+        .limit(limit)
+        .all()
+    )
     
 
 
@@ -153,7 +157,7 @@ USER_FEATURE, POST_FEATURE, FEED_LIKES_FEATURE = load_features()
 logger.info("loading model")
 model = load_models()
 
-def recommended_posts(
+def recommendations(
 		id: int, 
 		time: datetime, 
 		limit: int = 5):
@@ -206,21 +210,22 @@ def recommended_posts(
 
 
 
-print(recommended_posts(113947, datetime.datetime.now()))
-print(recommended_posts(201, datetime.datetime.now()))
-print(recommended_posts(200, datetime.datetime.now()))
 
 
-# @app.get("/post/recommendations/", response_model=List[PostGet])
-# def recommended_posts(id: int, time: datetime, limit: int = 10, db: Session = Depends(get_db)) -> List[PostGet]:
-#     result = db.query(User).filter(User.user_id == id).first()
-#     if not result:
-#         raise HTTPException(status_code=404, detail="Not found")
-#     else:
-#         return recommended_posts(id, datetime.datetime.now(), 5)
+
+@app.get("/post/recommendations/", response_model=List[PostGet])
+def recommended_posts(id: int, time: datetime, limit: int = 10, db: Session = Depends(get_db)) -> List[PostGet]:
+    result = db.query(User).filter(User.id == id).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Not found")
+    else:
+        return recommendations(id, time, 5)
     
 
-     
+
+    
+
+
     
 
 
