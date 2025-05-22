@@ -17,11 +17,8 @@ from src.database.database import SessionLocal
 from src.database.tables.table_user import User
 from src.database.tables.table_post import Post
 from src.database.tables.table_feed import Feed
-from src.database.schema import UserGet
+from src.database.schema import UserGet, PostGet, FeedGet
 
-# , PostGet, FeedGet
-
-from schema import PostGet
 
 from fastapi import FastAPI, Depends, HTTPException
 from loguru import logger
@@ -33,57 +30,57 @@ def get_db():
         return db
     
 
-@app.get("/user/{id}", response_model=UserGet)
-def user_info(id, int, db: Session = Depends(get_db)):
-    result = db.query(User).filter(User.user_id == id).first()
-    if not result:
-        raise HTTPException(status_code=404, detail="Not found")
-    else:
-        return result
+# @app.get("/user/{id}", response_model=UserGet)
+# def user_info(id, int, db: Session = Depends(get_db)):
+#     result = db.query(User).filter(User.user_id == id).first()
+#     if not result:
+#         raise HTTPException(status_code=404, detail="Not found")
+#     else:
+#         return result
     
 
-@app.get("/post/{id}", response_model = PostGet)
-def post_into(id: int, db: Session = Depends(get_db)):
-    result =  db.query(Post).filter(Post.id == id).first()
-    if not result:
-        raise HTTPException(404, "user not found")
-    else:
-        return result
+# @app.get("/post/{id}", response_model = PostGet)
+# def post_into(id: int, db: Session = Depends(get_db)):
+#     result =  db.query(Post).filter(Post.id == id).first()
+#     if not result:
+#         raise HTTPException(404, "user not found")
+#     else:
+#         return result
 
-@app.get("/user/{id}/feed", response_model = List[FeedGet])
-def user_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
-    result =  (
-        db.query(Feed)
-        .filter(Feed.user_id == id)
-        .order_by(Feed.time.desc())
-        .limit(limit)
-        .all()
-    )
-    return result
+# @app.get("/user/{id}/feed", response_model = List[FeedGet])
+# def user_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
+#     result =  (
+#         db.query(Feed)
+#         .filter(Feed.user_id == id)
+#         .order_by(Feed.time.desc())
+#         .limit(limit)
+#         .all()
+#     )
+#     return result
 
-@app.get("/post/{id}/feed", response_model = List[FeedGet])
-def post_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
-    result =  (
-        db.query(Feed)
-        .filter(Feed.post_id == id)
-        .order_by(Feed.time.desc())
-        .limit(limit)
-        .all()
-    )
-    return result
+# @app.get("/post/{id}/feed", response_model = List[FeedGet])
+# def post_feed_into(id: int, limit: int = 10,  db: Session = Depends(get_db)):
+#     result =  (
+#         db.query(Feed)
+#         .filter(Feed.post_id == id)
+#         .order_by(Feed.time.desc())
+#         .limit(limit)
+#         .all()
+#     )
+#     return result
 
-@app.get("/post/recommendations/", response_model = List[PostGet])
-def get_recommended_feed(id: Optional[int] = None, limit: int = 10,  db: Session = Depends(get_db)):
-    result =  (
-        db.query(Post)
-        .select_from(Feed)
-        .filter(Feed.action == "like")
-        .join(Post, Post.id == Feed.post_id)
-        .group_by(Post.id)
-        .order_by(desc(func.count(Feed.post_id)))
-        .limit(limit)
-        .all()
-    )
+# @app.get("/post/recommendations/", response_model = List[PostGet])
+# def get_recommended_feed(id: Optional[int] = None, limit: int = 10,  db: Session = Depends(get_db)):
+#     result =  (
+#         db.query(Post)
+#         .select_from(Feed)
+#         .filter(Feed.action == "like")
+#         .join(Post, Post.id == Feed.post_id)
+#         .group_by(Post.id)
+#         .order_by(desc(func.count(Feed.post_id)))
+#         .limit(limit)
+#         .all()
+#     )
     
 
 
@@ -99,7 +96,7 @@ def get_model_path(path: str) -> str:
     return MODEL_PATH
 
 def load_models():
-    model_path = get_model_path("C:\\Users\\fedor\\KC_Final_RecSys\\catboost_model")
+    model_path = get_model_path("C:\\Users\\fedor\\KC_Final_RecSys\\catboost_model_with_dl")
     model = CatBoostClassifier()
     model.load_model(model_path)
 
@@ -136,12 +133,19 @@ def load_features():
     user_df = batch_load_sql(user_query)
     
 
-    post_text_query = """
-        SELECT * FROM fedorrybalov_lesson_22_post_data;
+    # post_text_query = """
+    #     SELECT * FROM fedorrybalov_lesson_22_post_data;
+    #     """
+
+    # logger.info("loading post_data")
+    # post_text_df = batch_load_sql(post_text_query)
+
+    post_text_dl_query = """
+        SELECT * FROM fedorrybalov_post_data_dl_features;
         """
-    
-    logger.info("loading post_data")
-    post_text_df = batch_load_sql(post_text_query)
+
+    logger.info("loading post_data with DL features")
+    post_text_dl_df = batch_load_sql(post_text_dl_query)
     
     feed_user_likes_query = """
         SELECT distinct user_id, post_id FROM feed_data WHERE action = 'like';
@@ -149,7 +153,7 @@ def load_features():
     logger.info("loading user liked posts")
     feed_user_likes_df = batch_load_sql(feed_user_likes_query)
 
-    return user_df, post_text_df, feed_user_likes_df
+    return user_df, post_text_dl_df, feed_user_likes_df
 
 
 logger.info("loading features from DB")
@@ -177,6 +181,11 @@ def recommendations(
 
     all_features = cat_features +[col for col in user_post_data.columns if col not in cat_features]
     user_post_data = user_post_data[all_features]
+
+
+    feature_order = model.feature_names_
+
+    user_post_data = user_post_data[feature_order]
 
     logger.info("making predictions...")
     predicts = model.predict_proba(user_post_data)[:, 1]
