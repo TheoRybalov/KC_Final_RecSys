@@ -138,14 +138,15 @@ def main():
 
     feed_data = process_timestamp(feed_data)
 
-    # save_data_to_sql(engine, user_data, 'fedorrybalov_lesson_22_user_data')
-    # print("сохранили в базу user_data")
 
-    # save_data_to_sql(engine, post_text_df, 'fedorrybalov_lesson_22_post_data')
-    # print("сохранили в базу post_data")
+    save_data_to_sql(engine, user_data, 'fedorrybalov_lesson_22_user_data')
+    print("сохранили в базу user_data")
 
-    # save_data_to_sql(engine, feed_data, 'fedorrybalov_lesson_22_feed_data')
-    # print("сохранили в базу feed_data")
+    save_data_to_sql(engine, post_text_df, 'fedorrybalov_lesson_22_post_data')
+    print("сохранили в базу post_data")
+
+    save_data_to_sql(engine, feed_data, 'fedorrybalov_lesson_22_feed_data')
+    print("сохранили в базу feed_data")
 
 
     full_data = merge_data(feed_data, user_data, post_text_df)
