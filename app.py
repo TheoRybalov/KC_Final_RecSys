@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import pandas as pd
 from sqlalchemy import create_engine
-
+import hashlib
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
@@ -17,7 +17,7 @@ from src.database.database import SessionLocal
 from src.database.tables.table_user import User
 from src.database.tables.table_post import Post
 from src.database.tables.table_feed import Feed
-from src.database.schema import UserGet, PostGet, FeedGet
+from src.database.schema import UserGet, PostGet, FeedGet, Response
 
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -96,12 +96,18 @@ def get_model_path(path: str) -> str:
     return MODEL_PATH
 
 def load_models():
-    model_path = get_model_path("C:\\Users\\fedor\\KC_Final_RecSys\\catboost_model_with_dl")
-    model = CatBoostClassifier()
-    model.load_model(model_path)
+    logger.info("loading control model (CatBoost + TF-IDF)")
+    model_control_path = get_model_path("C:\\Users\\fedor\\KC_Final_RecSys\\catboost_model")
+    model_control = CatBoostClassifier()
+    model_control.load_model(model_control_path)
+
+    logger.info("loading test model (CatBoost + BERT)")
+    model_test_path = get_model_path("C:\\Users\\fedor\\KC_Final_RecSys\\catboost_model_with_dl")
+    model_test = CatBoostClassifier()
+    model_test.load_model(model_test_path)
 
     
-    return model
+    return model_control, model_test
 
 
 
@@ -133,17 +139,15 @@ def load_features():
     user_df = batch_load_sql(user_query)
     
 
-    # post_text_query = """
-    #     SELECT * FROM fedorrybalov_lesson_22_post_data;
-    #     """
-
-    # logger.info("loading post_data")
-    # post_text_df = batch_load_sql(post_text_query)
+    post_text_query = """
+        SELECT * FROM fedorrybalov_lesson_22_post_data;
+        """
+    logger.info("loading post_data")
+    post_text_df = batch_load_sql(post_text_query)
 
     post_text_dl_query = """
         SELECT * FROM fedorrybalov_post_data_dl_features;
-        """
-
+        """  
     logger.info("loading post_data with DL features")
     post_text_dl_df = batch_load_sql(post_text_dl_query)
     
@@ -153,23 +157,46 @@ def load_features():
     logger.info("loading user liked posts")
     feed_user_likes_df = batch_load_sql(feed_user_likes_query)
 
-    return user_df, post_text_dl_df, feed_user_likes_df
+    return user_df, post_text_df, post_text_dl_df, feed_user_likes_df
+
+
+def get_exp_group(user_id: int) -> str:
+    logger.info("getting experiment group...")
+    temp_exp_group = int(hashlib.md5((str(user_id) + "my_salt").encode()).hexdigest(), 16) % 100
+    if temp_exp_group < 50:
+        exp_group = "control"
+    elif temp_exp_group >= 50:
+        exp_group = "test"
+    return exp_group
 
 
 logger.info("loading features from DB")
-USER_FEATURE, POST_FEATURE, FEED_LIKES_FEATURE = load_features()
+USER_FEATURE, POST_FEATURE, POST_FEATURE_DL, FEED_LIKES_FEATURE = load_features()
 logger.info("loading model")
-model = load_models()
+model_control, model_test = load_models()
 
 def recommendations(
 		id: int, 
 		time: datetime, 
 		limit: int = 5):
     
+    exp_group = get_exp_group(id)
+    if exp_group == "control":
+        logger.info(f"user's {id} group is CONTROL")
+        model = model_control
+        post_data = POST_FEATURE.copy()
+    elif exp_group == "test":
+        logger.info(f"user's {id} group is TEST")
+        model = model_test
+        post_data = POST_FEATURE_DL.copy()
+    else:
+        raise HTTPException(status_code=404, detail="group not found")
+
+        
+
+    
     logger.info("preparing features for model")
     user_data = USER_FEATURE.loc[USER_FEATURE["user_id"] == id].drop(["user_id"], axis =1)
-
-    post_data = POST_FEATURE.copy()
 
     user_post_data = user_data.merge(post_data, how = "cross").set_index("post_id")
     user_post_data = user_post_data.drop(["text"], axis=1)
@@ -208,13 +235,14 @@ def recommendations(
 
     print(recommendations[["post_id", "text", "topic"]].head())
 
-    return [
+    return {"exp_group": exp_group,
+            "recommendations": [
         PostGet(**{
             "id": i,
             "text": post_data[post_data["post_id"] == i]["text"].values[0],
             "topic": post_data[post_data["post_id"] == i]["topic"].values[0]
         } ) for i in recommended_post_idx
-    ]
+    ]}
 
 
 
@@ -222,8 +250,8 @@ def recommendations(
 
 
 
-@app.get("/post/recommendations/", response_model=List[PostGet])
-def recommended_posts(id: int, time: datetime, limit: int = 10, db: Session = Depends(get_db)) -> List[PostGet]:
+@app.get("/post/recommendations/", response_model=Response)
+def recommended_posts(id: int, time: datetime, limit: int = 10, db: Session = Depends(get_db)) -> Response:
     result = db.query(User).filter(User.id == id).first()
     if not result:
         raise HTTPException(status_code=404, detail="Not found")
