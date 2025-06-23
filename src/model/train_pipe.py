@@ -91,7 +91,6 @@ def process_text_data(data: pd.DataFrame):
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns = vectorizer.get_feature_names_out())
 
     data = pd.concat([data, tfidf_df], axis = 1)
-    data = data.drop(["text"], axis = 1)
     return data
 
 
@@ -139,6 +138,8 @@ def main():
     feed_data = process_timestamp(feed_data)
 
 
+
+
     save_data_to_sql(engine, user_data, 'fedorrybalov_lesson_22_user_data')
     print("сохранили в базу user_data")
 
@@ -147,6 +148,8 @@ def main():
 
     save_data_to_sql(engine, feed_data, 'fedorrybalov_lesson_22_feed_data')
     print("сохранили в базу feed_data")
+
+    post_text_df = post_text_df.drop(["text"], axis=1)
 
 
     full_data = merge_data(feed_data, user_data, post_text_df)
